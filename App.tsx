@@ -1,9 +1,10 @@
 import React, { useState, useCallback, useRef, useEffect } from 'react';
-import { Banana, Loader2, Wand2, RefreshCw, Download, Trash2, Upload, X, Image as ImageIcon, LogIn, LogOut, User as UserIcon, ShieldCheck, Zap, Star, MessageSquare, Send, ExternalLink, Sparkles, Mail, Lock, UserPlus, Paperclip } from 'lucide-react';
+import { Banana, Loader2, Wand2, RefreshCw, Download, Trash2, Upload, X, Image as ImageIcon, LogIn, LogOut, User as UserIcon, ShieldCheck, Zap, Star, MessageSquare, Send, ExternalLink, Sparkles, Mail, Lock, UserPlus, Paperclip, Pencil, Check } from 'lucide-react';
 import { generateBananaImage, generateCreativePrompt, chatWithGemini } from './services/geminiService';
 import { GeneratedImage } from './types';
-import { auth, signInWithGoogle, logout, getAccountTier, AccountTier, signUpWithEmail, loginWithEmail } from './services/firebase';
+import { auth, signInWithGoogle, logout, getAccountTier, AccountTier, signUpWithEmail, loginWithEmail, db } from './services/firebase';
 import { onAuthStateChanged, User } from 'firebase/auth';
+import { collection, doc, getDocFromServer, onSnapshot, setDoc, updateDoc, deleteDoc, query, orderBy, getDocs, Timestamp } from 'firebase/firestore';
 import Markdown from 'react-markdown';
 import { extractPngInfo, injectPngInfo } from './services/pngService';
 
@@ -27,6 +28,34 @@ interface ChatSession {
   createdAt: number;
 }
 
+enum OperationType {
+  CREATE = 'create',
+  UPDATE = 'update',
+  DELETE = 'delete',
+  LIST = 'list',
+  GET = 'get',
+  WRITE = 'write',
+}
+
+interface FirestoreErrorInfo {
+  error: string;
+  operationType: OperationType;
+  path: string | null;
+  authInfo: {
+    userId?: string;
+    email?: string | null;
+    emailVerified?: boolean;
+    isAnonymous?: boolean;
+    tenantId?: string | null;
+    providerInfo: {
+      providerId: string;
+      displayName: string | null;
+      email: string | null;
+      photoUrl: string | null;
+    }[];
+  }
+}
+
 const App: React.FC = () => {
   const [user, setUser] = useState<User | null>({ 
     displayName: 'Guest Banana', 
@@ -37,6 +66,43 @@ const App: React.FC = () => {
   const [tier, setTier] = useState<AccountTier>('Free');
   const [activeTab, setActiveTab] = useState<'lab' | 'chat'>('lab');
   const [isGuest, setIsGuest] = useState<boolean>(true);
+
+  const handleFirestoreError = (error: unknown, operationType: OperationType, path: string | null) => {
+    const errInfo: FirestoreErrorInfo = {
+      error: error instanceof Error ? error.message : String(error),
+      authInfo: {
+        userId: auth?.currentUser?.uid,
+        email: auth?.currentUser?.email,
+        emailVerified: auth?.currentUser?.emailVerified,
+        isAnonymous: auth?.currentUser?.isAnonymous,
+        tenantId: auth?.currentUser?.tenantId,
+        providerInfo: auth?.currentUser?.providerData.map(provider => ({
+          providerId: provider.providerId,
+          displayName: provider.displayName,
+          email: provider.email,
+          photoUrl: provider.photoURL
+        })) || []
+      },
+      operationType,
+      path
+    };
+    console.error('Firestore Error: ', JSON.stringify(errInfo));
+    throw new Error(JSON.stringify(errInfo));
+  };
+
+  useEffect(() => {
+    async function testConnection() {
+      if (!db) return;
+      try {
+        await getDocFromServer(doc(db, 'test', 'connection'));
+      } catch (error) {
+        if (error instanceof Error && error.message.includes('the client is offline')) {
+          console.error("Please check your Firebase configuration.");
+        }
+      }
+    }
+    testConnection();
+  }, []);
 
   // Image Config State
   const [aspectRatio, setAspectRatio] = useState<string>("1:1");
@@ -83,6 +149,8 @@ const App: React.FC = () => {
   });
   const [currentSessionId, setCurrentSessionId] = useState<string | null>(null);
   const [chatLoading, setChatLoading] = useState<boolean>(false);
+  const [editingSessionId, setEditingSessionId] = useState<string | null>(null);
+  const [editingTitle, setEditingTitle] = useState<string>('');
   const chatEndRef = useRef<HTMLDivElement>(null);
   const chatFileInputRef = useRef<HTMLInputElement>(null);
 
@@ -128,6 +196,12 @@ const App: React.FC = () => {
     }
   };
 
+  const handleRenameSession = (id: string, newTitle: string) => {
+    if (!newTitle.trim()) return;
+    setChatSessions(prev => prev.map(s => s.id === id ? { ...s, title: newTitle } : s));
+    setEditingSessionId(null);
+  };
+
   useEffect(() => {
     if (chatSessions.length > 0 && !currentSessionId) {
       setCurrentSessionId(chatSessions[0].id);
@@ -157,6 +231,43 @@ const App: React.FC = () => {
     });
     return () => unsubscribe();
   }, []);
+
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (zoomedImageUrl) {
+        if (e.key === 'Escape' || e.key === ' ') {
+          e.preventDefault();
+          setZoomedImageUrl(null);
+          setZoomScale(1);
+        }
+      }
+    };
+
+    const handlePaste = (e: ClipboardEvent) => {
+      const items = e.clipboardData?.items;
+      if (items) {
+        for (let i = 0; i < items.length; i++) {
+          if (items[i].type.indexOf('image') !== -1) {
+            const blob = items[i].getAsFile();
+            if (blob) {
+              if (activeTab === 'lab') {
+                processFile(blob);
+              } else {
+                handleChatImageUpload(blob);
+              }
+            }
+          }
+        }
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    window.addEventListener('paste', handlePaste);
+    return () => {
+      window.removeEventListener('keydown', handleKeyDown);
+      window.removeEventListener('paste', handlePaste);
+    };
+  }, [zoomedImageUrl, activeTab]);
 
   const handleLogin = async () => {
     try {
@@ -200,6 +311,22 @@ const App: React.FC = () => {
       setCurrentSessionId(null);
     } catch (err) {
       setError("Failed to sign out.");
+    }
+  };
+
+  const handleResetAccount = async () => {
+    if (window.confirm("Are you sure? This will clear all your history and log you out to start fresh.")) {
+      localStorage.clear();
+      await handleLogout();
+      window.location.reload();
+    }
+  };
+
+  const handleChangeEmail = async () => {
+    const newEmail = window.prompt("Enter new email address:");
+    if (newEmail && newEmail.includes('@')) {
+      alert("Email change request sent! (Note: In a real app, this would trigger a Firebase updateEmail call)");
+      // In a real app: await updateEmail(auth.currentUser, newEmail);
     }
   };
 
@@ -690,6 +817,22 @@ const App: React.FC = () => {
               >
                 <LogOut size={20} />
               </button>
+              <button 
+                onClick={handleResetAccount}
+                className="p-2 hover:bg-banana-500 hover:text-dark-900 rounded-xl transition-colors text-banana-500/40"
+                title="Reset & Switch Account"
+              >
+                <RefreshCw size={16} />
+              </button>
+              {!isGuest && (
+                <button 
+                  onClick={handleChangeEmail}
+                  className="p-2 hover:bg-banana-500 hover:text-dark-900 rounded-xl transition-colors text-banana-500/40"
+                  title="Change Email"
+                >
+                  <Mail size={16} />
+                </button>
+              )}
             </div>
           </div>
         </div>
@@ -957,7 +1100,7 @@ const App: React.FC = () => {
             </div>
           </div>
         ) : (
-          <div className="flex flex-col lg:flex-row h-[600px] gap-4 animate-in slide-in-from-right duration-300">
+          <div className="flex flex-col lg:flex-row h-[800px] gap-4 animate-in slide-in-from-right duration-300">
             {/* Main Chat Area */}
             <div className="flex-grow flex flex-col bg-dark-800 rounded-3xl shadow-xl border-4 border-dark-800 overflow-hidden">
               {/* Chat Messages */}
@@ -1104,18 +1247,50 @@ const App: React.FC = () => {
                       onClick={() => setCurrentSessionId(session.id)}
                       className={`group p-3 rounded-xl cursor-pointer transition-all border-2 flex justify-between items-center ${currentSessionId === session.id ? 'bg-banana-500/10 border-banana-500 text-banana-500' : 'bg-dark-900 border-dark-900 text-banana-500/40 hover:border-banana-500/30'}`}
                     >
-                      <div className="flex flex-col overflow-hidden">
-                        <span className="text-xs font-black truncate">{session.title}</span>
-                        <span className="text-[10px] opacity-50">
-                          {new Date(session.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-                        </span>
-                      </div>
-                      <button 
-                        onClick={(e) => deleteSession(session.id, e)}
-                        className="opacity-0 group-hover:opacity-100 p-1 hover:bg-red-500 hover:text-white rounded transition-all"
-                      >
-                        <Trash2 size={12} />
-                      </button>
+                      {editingSessionId === session.id ? (
+                        <div className="flex items-center gap-1 w-full" onClick={e => e.stopPropagation()}>
+                          <input 
+                            type="text"
+                            value={editingTitle}
+                            onChange={e => setEditingTitle(e.target.value)}
+                            onKeyDown={e => e.key === 'Enter' && handleRenameSession(session.id, editingTitle)}
+                            className="bg-dark-900 text-xs font-black p-1 rounded border border-banana-500 outline-none w-full text-white"
+                            autoFocus
+                          />
+                          <button onClick={() => handleRenameSession(session.id, editingTitle)} className="text-green-500 p-1 hover:bg-green-500/20 rounded">
+                            <Check size={14} />
+                          </button>
+                        </div>
+                      ) : (
+                        <>
+                          <div className="flex flex-col overflow-hidden">
+                            <span className="text-xs font-black truncate">{session.title}</span>
+                            <span className="text-[10px] opacity-50">
+                              {new Date(session.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                            </span>
+                          </div>
+                          <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-all">
+                            <button 
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                setEditingSessionId(session.id);
+                                setEditingTitle(session.title);
+                              }}
+                              className="p-1 hover:bg-banana-500 hover:text-dark-900 rounded transition-colors"
+                              title="Rename"
+                            >
+                              <Pencil size={12} />
+                            </button>
+                            <button 
+                              onClick={(e) => deleteSession(session.id, e)}
+                              className="p-1 hover:bg-red-500 hover:text-white rounded transition-colors"
+                              title="Delete"
+                            >
+                              <Trash2 size={12} />
+                            </button>
+                          </div>
+                        </>
+                      )}
                     </div>
                   ))
                 )}
@@ -1171,4 +1346,52 @@ const App: React.FC = () => {
   );
 };
 
-export default App;
+class ErrorBoundary extends React.Component<{ children: React.ReactNode }, { hasError: boolean, error: any }> {
+  constructor(props: any) {
+    super(props);
+    this.state = { hasError: false, error: null };
+  }
+
+  static getDerivedStateFromError(error: any) {
+    return { hasError: true, error };
+  }
+
+  render() {
+    if (this.state.hasError) {
+      let errorMessage = "Something went wrong.";
+      try {
+        const parsed = JSON.parse(this.state.error.message);
+        if (parsed.error) errorMessage = `Firestore Error: ${parsed.error}`;
+      } catch (e) {
+        errorMessage = this.state.error.message || errorMessage;
+      }
+
+      return (
+        <div className="min-h-screen bg-dark-900 flex items-center justify-center p-4">
+          <div className="bg-dark-800 border-2 border-red-500/50 p-8 rounded-3xl max-w-md w-full text-center space-y-4">
+            <div className="bg-red-500/10 w-16 h-16 rounded-full flex items-center justify-center mx-auto text-red-500">
+              <X size={32} />
+            </div>
+            <h2 className="text-xl font-black text-white uppercase tracking-widest">Application Error</h2>
+            <p className="text-banana-500/60 text-sm font-medium">{errorMessage}</p>
+            <button 
+              onClick={() => window.location.reload()}
+              className="w-full bg-banana-500 text-dark-900 font-black py-3 rounded-xl hover:bg-banana-400 transition-all"
+            >
+              RELOAD APP
+            </button>
+          </div>
+        </div>
+      );
+    }
+    return this.props.children;
+  }
+}
+
+const AppWithBoundary: React.FC = () => (
+  <ErrorBoundary>
+    <App />
+  </ErrorBoundary>
+);
+
+export default AppWithBoundary;

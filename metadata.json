@@ -1,5 +1,9 @@
 {
-  "name": "Infinite Banana Generator",
+  "name": "BANANA FREE",
   "description": "A fruity AI application dedicated to generating the most absurd and delightful banana-themed images using Gemini.",
-  "requestFramePermissions": []
+  "requestFramePermissions": [
+    "camera",
+    "microphone",
+    "geolocation"
+  ]
 }
