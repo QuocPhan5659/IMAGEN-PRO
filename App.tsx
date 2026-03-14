@@ -758,13 +758,15 @@ const App: React.FC = () => {
                 <h2 className={`text-lg font-bold ${theme === 'dark' ? 'text-white' : 'text-gray-900'}`}>Reference & Configuration</h2>
               </div>
 
-              <ImageUploader 
-                currentImages={sourceImages} 
-                onImagesUpload={handleImagesUpload} 
-                onRemoveImage={handleRemoveImage}
-                onClearAll={handleClearAllImages}
-                theme={theme}
-              />
+              {activeTab === 'standard' && (
+                <ImageUploader 
+                  currentImages={sourceImages} 
+                  onImagesUpload={handleImagesUpload} 
+                  onRemoveImage={handleRemoveImage}
+                  onClearAll={handleClearAllImages}
+                  theme={theme}
+                />
+              )}
 
               {/* Control Bar: Analyze / Master Lighting / Generate */}
               {sourceImages.length > 0 && (
