@@ -49,45 +49,12 @@ export const ApiKeyModal: React.FC<ApiKeyModalProps> = ({
 
         <div className="p-4 space-y-4">
           <div className="space-y-3">
-            {window.aistudio && (
-              <div className="space-y-2">
-                <div className="flex gap-2">
-                  <button
-                    onClick={async () => {
-                      await window.aistudio?.openSelectKey();
-                      onClose();
-                    }}
-                    className="flex-1 py-2.5 px-4 bg-gradient-to-r from-purple-600 to-purple-800 hover:from-purple-700 hover:to-purple-900 text-white rounded-xl font-bold shadow-lg shadow-purple-900/20 flex items-center justify-center gap-2 transition-all active:scale-95 group"
-                  >
-                    <ShieldCheck size={18} className="group-hover:scale-110 transition-transform" />
-                    <div className="text-left">
-                      <div className="text-xs">Select Platform Key</div>
-                    </div>
-                  </button>
-                  <button
-                    onClick={async () => {
-                      await window.aistudio?.openSelectKey();
-                    }}
-                    className="px-3 py-2.5 bg-gray-800 hover:bg-gray-700 text-gray-400 rounded-xl border border-gray-700 transition-all active:scale-95"
-                    title="Reset Platform Selection"
-                  >
-                    <RefreshCw size={16} />
-                  </button>
-                </div>
-                <div className="flex items-center gap-2 py-1">
-                  <div className="h-px flex-1 bg-gray-800"></div>
-                  <span className="text-[9px] font-bold text-gray-600 uppercase tracking-widest">OR</span>
-                  <div className="h-px flex-1 bg-gray-800"></div>
-                </div>
-              </div>
-            )}
-            
             <div className="relative">
               <input
                 type={showKey ? "text" : "password"}
                 value={key}
                 onChange={(e) => setKey(e.target.value)}
-                placeholder="AI Studio API Key..."
+                placeholder="Enter your API Key..."
                 className="w-full pl-3 pr-20 py-2 bg-[#121212] border border-gray-800 rounded-lg focus:ring-1 focus:ring-purple-500/50 focus:border-purple-500/50 outline-none transition-all font-mono text-xs text-white"
               />
               <div className="absolute right-1 top-1/2 -translate-y-1/2 flex items-center gap-1">
@@ -118,7 +85,7 @@ export const ApiKeyModal: React.FC<ApiKeyModalProps> = ({
                 rel="noopener noreferrer"
                 className="text-[9px] text-purple-400 hover:underline flex items-center gap-1"
               >
-                Get Free Key <ExternalLink size={8} />
+                Get API Key <ExternalLink size={8} />
               </a>
               <a 
                 href="https://aistudio.google.com/app/plan_and_billing" 
@@ -126,7 +93,7 @@ export const ApiKeyModal: React.FC<ApiKeyModalProps> = ({
                 rel="noopener noreferrer"
                 className="text-[9px] text-gray-500 hover:text-purple-400 hover:underline flex items-center gap-1"
               >
-                Check Tier <ExternalLink size={8} />
+                Check Billing <ExternalLink size={8} />
               </a>
             </div>
 

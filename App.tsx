@@ -74,12 +74,6 @@ const App: React.FC = () => {
     // If user has provided a manual key, use it
     if (userApiKey) return true;
 
-    // Fallback to platform key if available
-    if (window.aistudio) {
-      const hasKey = await window.aistudio.hasSelectedApiKey();
-      if (hasKey) return true;
-    }
-
     // If it's a paid model and no key is found, return false to trigger fallback
     if (isPaidModel) return false;
 
@@ -757,23 +751,21 @@ const App: React.FC = () => {
 
         {/* Action Section Container */}
         <div className="w-full mb-6 px-2">
-          <div className="space-y-4">
-            <div className="flex items-center justify-between">
-              <h2 className={`text-lg font-bold ${theme === 'dark' ? 'text-white' : 'text-gray-900'}`}>Reference & Configuration</h2>
-            </div>
-
-            <ImageUploader 
-              currentImages={sourceImages} 
-              onImagesUpload={handleImagesUpload} 
-              onRemoveImage={handleRemoveImage}
-              onClearAll={handleClearAllImages}
-              theme={theme}
-            />
-          </div>
-
           {/* Standard Tab Controls */}
           {activeTab === 'standard' && (
-            <div className="space-y-4 mt-4">
+            <div className="space-y-4">
+              <div className="flex items-center justify-between">
+                <h2 className={`text-lg font-bold ${theme === 'dark' ? 'text-white' : 'text-gray-900'}`}>Reference & Configuration</h2>
+              </div>
+
+              <ImageUploader 
+                currentImages={sourceImages} 
+                onImagesUpload={handleImagesUpload} 
+                onRemoveImage={handleRemoveImage}
+                onClearAll={handleClearAllImages}
+                theme={theme}
+              />
+
               {/* Control Bar: Analyze / Master Lighting / Generate */}
               {sourceImages.length > 0 && (
                 <div className={`flex flex-col sm:flex-row items-center gap-3 p-2 rounded-xl shadow-sm border transition-colors ${theme === 'dark' ? 'bg-gray-800 border-gray-700' : 'bg-white border-gray-200'}`}>
